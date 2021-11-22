@@ -39,23 +39,22 @@
 //! }
 //! ```
 
-#![cfg_attr(all(feature="nightly", test), feature(test))]
-#![cfg_attr(feature="nightly", feature(drop_types_in_const))]
-#![cfg_attr(all(feature="nightly", test), feature(core_intrinsics))]
-#![cfg_attr(feature="nightly", feature(const_fn))]
-#![cfg_attr(feature="nightly", feature(const_unsafe_cell_new))]
-
+#![cfg_attr(all(feature = "nightly", test), feature(test))]
+#![cfg_attr(feature = "nightly", feature(drop_types_in_const))]
+#![cfg_attr(all(feature = "nightly", test), feature(core_intrinsics))]
+#![cfg_attr(feature = "nightly", feature(const_fn))]
+#![cfg_attr(feature = "nightly", feature(const_unsafe_cell_new))]
 #![warn(missing_docs)]
 
-#[macro_use]
+// #[macro_use]
 #[cfg(test)]
 extern crate lazy_static;
 
-use std::thread::{self, JoinHandle};
-use std::sync::mpsc::{channel, Sender, Receiver, SyncSender, sync_channel, RecvError};
-use std::sync::{Arc, Mutex};
 use std::marker::PhantomData;
 use std::mem;
+use std::sync::mpsc::{channel, sync_channel, Receiver, RecvError, Sender, SyncSender};
+use std::sync::{Arc, Mutex};
+use std::thread::{self, JoinHandle};
 
 enum Message {
     NewJob(Thunk<'static>),
@@ -84,7 +83,7 @@ impl Drop for Pool {
 /// of threads spawned at construction.
 pub struct Pool {
     threads: Vec<ThreadData>,
-    job_sender: Option<Sender<Message>>
+    job_sender: Option<Sender<Message>>,
 }
 
 struct ThreadData {
@@ -108,10 +107,8 @@ impl Pool {
         for _ in 0..n {
             let job_receiver = job_receiver.clone();
 
-            let (pool_sync_tx, pool_sync_rx) =
-                sync_channel::<()>(0);
-            let (thread_sync_tx, thread_sync_rx) =
-                sync_channel::<()>(0);
+            let (pool_sync_tx, pool_sync_rx) = sync_channel::<()>(0);
+            let (thread_sync_tx, thread_sync_rx) = sync_channel::<()>(0);
 
             let thread = thread::spawn(move || {
                 loop {
@@ -147,7 +144,7 @@ impl Pool {
                         }
                         Err(..) => {
                             // The pool was dropped.
-                            break
+                            break;
                         }
                     }
                 }
@@ -155,13 +152,13 @@ impl Pool {
 
             threads.push(ThreadData {
                 _thread_join_handle: thread,
-                pool_sync_rx: pool_sync_rx,
-                thread_sync_tx: thread_sync_tx,
+                pool_sync_rx,
+                thread_sync_tx,
             });
         }
 
         Pool {
-            threads: threads,
+            threads,
             job_sender: Some(job_sender),
         }
     }
@@ -172,7 +169,8 @@ impl Pool {
     /// This method will block until the closure and all its jobs have
     /// run to completion.
     pub fn scoped<'pool, 'scope, F, R>(&'pool mut self, f: F) -> R
-        where F: FnOnce(&Scope<'pool, 'scope>) -> R
+    where
+        F: FnOnce(&Scope<'pool, 'scope>) -> R,
     {
         let scope = Scope {
             pool: self,
@@ -202,21 +200,35 @@ impl<'pool, 'scope> Scope<'pool, 'scope> {
     /// The body of the closure will be send to one of the
     /// internal threads, and this method itself will not wait
     /// for its completion.
-    pub fn execute<F>(&self, f: F) where F: FnOnce() + Send + 'scope {
+    pub fn execute<F>(&self, f: F)
+    where
+        F: FnOnce() + Send + 'scope,
+    {
         self.execute_(f)
     }
 
-    fn execute_<F>(&self, f: F) where F: FnOnce() + Send + 'scope {
-        let b = unsafe {
-            mem::transmute::<Thunk<'scope>, Thunk<'static>>(Box::new(f))
-        };
-        self.pool.job_sender.as_ref().unwrap().send(Message::NewJob(b)).unwrap();
+    fn execute_<F>(&self, f: F)
+    where
+        F: FnOnce() + Send + 'scope,
+    {
+        let b = unsafe { mem::transmute::<Thunk<'scope>, Thunk<'static>>(Box::new(f)) };
+        self.pool
+            .job_sender
+            .as_ref()
+            .unwrap()
+            .send(Message::NewJob(b))
+            .unwrap();
     }
 
     /// Blocks until all currently queued jobs have run to completion.
     pub fn join_all(&self) {
         for _ in 0..self.pool.threads.len() {
-            self.pool.job_sender.as_ref().unwrap().send(Message::Join).unwrap();
+            self.pool
+                .job_sender
+                .as_ref()
+                .unwrap()
+                .send(Message::Join)
+                .unwrap();
         }
 
         // Synchronize/Join with threads
@@ -253,11 +265,11 @@ impl<'pool, 'scope> Drop for Scope<'pool, 'scope> {
 
 #[cfg(test)]
 mod tests {
-    #![cfg_attr(feature="nightly", allow(unused_unsafe))]
+    #![cfg_attr(feature = "nightly", allow(unused_unsafe))]
 
     use super::Pool;
-    use std::thread;
     use std::sync;
+    use std::thread;
     use std::time;
 
     fn sleep_ms(ms: u64) {
@@ -292,9 +304,7 @@ mod tests {
     fn thread_panic() {
         let mut pool = Pool::new(4);
         pool.scoped(|scoped| {
-            scoped.execute(move || {
-                panic!()
-            });
+            scoped.execute(move || panic!());
         });
     }
 
@@ -302,9 +312,7 @@ mod tests {
     #[should_panic]
     fn scope_panic() {
         let mut pool = Pool::new(4);
-        pool.scoped(|_scoped| {
-            panic!()
-        });
+        pool.scoped(|_scoped| panic!());
     }
 
     #[test]
@@ -387,17 +395,16 @@ mod tests {
     fn safe_execute() {
         let mut pool = Pool::new(4);
         pool.scoped(|scoped| {
-            scoped.execute(move || {
-            });
+            scoped.execute(move || {});
         });
     }
 }
 
-#[cfg(all(test, feature="nightly"))]
+#[cfg(all(test, feature = "nightly"))]
 mod benches {
     extern crate test;
 
-    use self::test::{Bencher, black_box};
+    use self::test::{black_box, Bencher};
     use super::Pool;
     use std::sync::Mutex;
 
@@ -416,7 +423,7 @@ mod benches {
         let mut prev_prev: u64 = 1;
         let mut prev = 1;
         let mut current = 1;
-        for _ in 2..(n+1) {
+        for _ in 2..(n + 1) {
             current = prev_prev.wrapping_add(prev);
             prev_prev = prev;
             prev = current;
@@ -424,7 +431,7 @@ mod benches {
         current
     }
 
-    fn threads_interleaved_n(pool: &mut Pool)  {
+    fn threads_interleaved_n(pool: &mut Pool) {
         let size = 1024; // 1kiB
 
         let mut data = vec![1u8; size];
@@ -432,7 +439,9 @@ mod benches {
             for e in data.iter_mut() {
                 s.execute(move || {
                     *e += fib(black_box(1000 * (*e as u64))) as u8;
-                    for i in 0..10000 { black_box(i); }
+                    for i in 0..10000 {
+                        black_box(i);
+                    }
                     //sleep_ms(MS_SLEEP_PER_OP);
                 });
             }
@@ -476,8 +485,10 @@ mod benches {
                         for i in 2..es.len() {
                             // Fibonnaci gets big fast,
                             // so just wrap around all the time
-                            es[i] = black_box(es[i-1].wrapping_add(es[i-2]));
-                            for i in 0..bb_repeat { black_box(i); }
+                            es[i] = black_box(es[i - 1].wrapping_add(es[i - 2]));
+                            for i in 0..bb_repeat {
+                                black_box(i);
+                            }
                         }
                     }
                     //sleep_ms(MS_SLEEP_PER_OP);

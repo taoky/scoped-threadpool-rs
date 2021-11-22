@@ -72,7 +72,7 @@ impl<F: FnOnce()> FnBox for F {
     }
 }
 
-type Thunk<'a> = Box<FnBox + Send + 'a>;
+type Thunk<'a> = Box<dyn FnBox + Send + 'a>;
 
 impl Drop for Pool {
     fn drop(&mut self) {
